@@ -582,10 +582,49 @@ namespace slskd.Files
                     Log.Debug("Successfully set Unix file mode to {Mode}", unixCreateMode);
                 }
 
-                // if the parent directory is empty after the move, delete it
-                if (deleteSourceDirectoryIfEmptyAfterMove && !Directory.EnumerateFileSystemEntries(Path.GetDirectoryName(sourceFilename)).Any())
+                // if the parent directory is empty after the move, delete it and prune empty ancestors up to the incomplete root
+                if (deleteSourceDirectoryIfEmptyAfterMove)
                 {
-                    Directory.Delete(Path.GetDirectoryName(sourceFilename));
+                    var parentDir = Path.GetDirectoryName(sourceFilename);
+                    var incompleteDir = OptionsMonitor.CurrentValue.Directories?.Incomplete;
+                    string normalizedIncompleteDir = !string.IsNullOrWhiteSpace(incompleteDir) ? Path.GetFullPath(incompleteDir) : null;
+
+                    while (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                    {
+                        var normalizedParentDir = Path.GetFullPath(parentDir);
+
+                        // Never delete the incomplete root directory itself
+                        if (normalizedIncompleteDir != null && string.Equals(normalizedParentDir, normalizedIncompleteDir, StringComparison.OrdinalIgnoreCase))
+                        {
+                            break;
+                        }
+
+                        // Safety: never delete a drive root (e.g. C:\ or U:\)
+                        var dirInfo = new DirectoryInfo(parentDir);
+                        if (dirInfo.Parent == null)
+                        {
+                            break;
+                        }
+
+                        // If directory is not empty, stop traversing upwards
+                        if (Directory.EnumerateFileSystemEntries(parentDir).Any())
+                        {
+                            break;
+                        }
+
+                        try
+                        {
+                            Directory.Delete(parentDir);
+                            Log.Debug("Cleaned up empty source directory {Directory}", parentDir);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, "Failed to delete empty source directory {Directory}: {Message}", parentDir, ex.Message);
+                            break;
+                        }
+
+                        parentDir = Path.GetDirectoryName(parentDir);
+                    }
                 }
 
                 return destinationFilename;

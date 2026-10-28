@@ -460,6 +460,65 @@ namespace slskd.Tests.Unit.Files
             Assert.Equal(paramMode, dirInfo.UnixFileMode);
             Assert.Equal(paramMode, File.GetUnixFileMode(filename));
         }
+        [Fact]
+        public void MoveFile_Deletes_Empty_Parent_And_Ancestors_Up_To_Incomplete_Root()
+        {
+            var incomplete = Path.Combine(Temp, "incomplete");
+            var dest = Path.Combine(Temp, "complete");
+            var userDir = Path.Combine(incomplete, "peerUser");
+            var remoteSubDir = Path.Combine(userDir, "music", "album");
+            Directory.CreateDirectory(remoteSubDir);
+            var file = Path.Combine(remoteSubDir, "track.flac");
+            File.WriteAllText(file, "test data");
+
+            OptionsMonitorMock.Setup(o => o.CurrentValue).Returns(new Options
+            {
+                Directories = new Options.DirectoriesOptions
+                {
+                    Incomplete = incomplete,
+                    Downloads = dest,
+                },
+            });
+
+            FileService.MoveFile(file, dest, deleteSourceDirectoryIfEmptyAfterMove: true);
+
+            Assert.True(Directory.Exists(dest));
+            Assert.True(File.Exists(Path.Combine(dest, "track.flac")));
+            Assert.True(Directory.Exists(incomplete));
+            Assert.False(Directory.Exists(userDir));
+        }
+
+        [Fact]
+        public void MoveFile_Does_Not_Delete_Non_Empty_Ancestor_Directories()
+        {
+            var incomplete = Path.Combine(Temp, "incomplete");
+            var dest = Path.Combine(Temp, "complete");
+            var userDir = Path.Combine(incomplete, "peerUser");
+            var album1 = Path.Combine(userDir, "album1");
+            var album2 = Path.Combine(userDir, "album2");
+            Directory.CreateDirectory(album1);
+            Directory.CreateDirectory(album2);
+            var file1 = Path.Combine(album1, "track1.flac");
+            var file2 = Path.Combine(album2, "track2.flac");
+            File.WriteAllText(file1, "track1 data");
+            File.WriteAllText(file2, "track2 data");
+
+            OptionsMonitorMock.Setup(o => o.CurrentValue).Returns(new Options
+            {
+                Directories = new Options.DirectoriesOptions
+                {
+                    Incomplete = incomplete,
+                    Downloads = dest,
+                },
+            });
+
+            FileService.MoveFile(file1, dest, deleteSourceDirectoryIfEmptyAfterMove: true);
+
+            Assert.True(Directory.Exists(dest));
+            Assert.True(File.Exists(Path.Combine(dest, "track1.flac")));
+            Assert.False(Directory.Exists(album1));
+            Assert.True(Directory.Exists(userDir));
+            Assert.True(File.Exists(file2));
+        }
     }
 }
-
